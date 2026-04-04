@@ -82,6 +82,16 @@ COMPARISON_NUTRIENT_SPECS: List[tuple] = [
     ("マグネシウム(g/100g)", COL_MAGNESIUM, COL_MAGNESIUM_DRY),
 ]
 
+# 比較グラフの縦軸ラベル（個別グラフ用）
+COMPARISON_Y_AXIS_TITLE: Dict[str, str] = {
+    "タンパク質": "g/100g",
+    "脂質": "g/100g",
+    "炭水化物": "%",
+    "リン(%)": "%",
+    "カルシウム(g/100g)": "g/100g",
+    "マグネシウム(g/100g)": "g/100g",
+}
+
 
 def estimate_animal_protein_pct_from_ingredients(main_ing: str) -> float:
     """
@@ -695,62 +705,166 @@ def compute_ranking(
 
 
 def inject_app_theme_css() -> None:
-    """落ち着いた配色・緑スライダー・Streamlit標準アラートの赤系を抑える"""
+    """ダークテーマ統一・タブ常時表示・サイドバー濃灰＋白文字・緑スライダー"""
     st.markdown(
         """
 <style>
-  /* Streamlit が参照するプライマリ色（スライダー等） */
   :root, .stApp, [data-testid="stAppViewContainer"] {
-    --primary-color: #15803d !important;
-    --slider-thumb-color: #166534 !important;
-    --slider-track-color-active: #bbf7d0 !important;
-    --slider-track-color-inactive: #e2e8e0 !important;
+    --primary-color: #22c55e !important;
+    --text-color: #e2e8f0 !important;
+    --widget-background-color: #1e293b !important;
   }
 
-  /* ベース */
+  /* ----- メイン：ダーク背景・明るい文字 ----- */
   .stApp {
-    background: linear-gradient(165deg, #f3f5f4 0%, #e8ecea 55%, #eef1ef 100%);
-    color: #334155;
+    background: linear-gradient(165deg, #0f172a 0%, #111827 45%, #0b1220 100%) !important;
+    color: #e2e8f0 !important;
   }
   .main .block-container {
     padding-top: 1.25rem;
+    color: #e2e8f0 !important;
   }
+  [data-testid="stAppViewContainer"] .main {
+    color: #e2e8f0 !important;
+  }
+
   [data-testid="stHeader"] {
-    background: rgba(243, 245, 244, 0.92);
-    border-bottom: 1px solid #d5ddd8;
+    background: rgba(15, 23, 42, 0.95) !important;
+    border-bottom: 1px solid #334155 !important;
   }
-  [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #eef2ef 0%, #e3e9e5 100%) !important;
-    border-right: 1px solid #cdd8d2 !important;
+  [data-testid="stHeader"] button {
+    color: #f1f5f9 !important;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+  }
+  [data-testid="stCaption"],
+  .stMarkdown p,
+  .stMarkdown li,
+  .stMarkdown span {
+    color: #cbd5e1 !important;
+  }
+
+  hr {
+    border-color: #334155 !important;
+  }
+
+  /* ----- タブ：常にラベルが見える（Streamlit 1.31+ の stTab / BaseWeb 両対応） ----- */
+  [data-testid="stTabs"] {
+    border-bottom: 1px solid #334155 !important;
+  }
+  [data-testid="stTabs"] [role="tablist"] {
+    gap: 4px !important;
+    background: transparent !important;
+  }
+  [data-testid="stTabs"] button[data-testid="stTab"] {
+    opacity: 1 !important;
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+    background-color: #1e293b !important;
+    border: 1px solid #475569 !important;
+    border-radius: 8px 8px 0 0 !important;
+    min-height: 2.75rem !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+  }
+  [data-testid="stTabs"] button[data-testid="stTab"][aria-selected="false"] {
+    color: #e2e8f0 !important;
+    -webkit-text-fill-color: #e2e8f0 !important;
+    background-color: #1e293b !important;
+  }
+  [data-testid="stTabs"] button[data-testid="stTab"][aria-selected="true"] {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: #0f172a !important;
+    border-color: #facc15 !important;
+    border-bottom: 3px solid #facc15 !important;
+    font-weight: 700 !important;
+  }
+  [data-testid="stTabs"] button[data-testid="stTab"]:hover {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: #334155 !important;
+  }
+  [data-testid="stTabs"] [role="tablist"] button,
+  [data-testid="stTabs"] [role="tab"],
+  [data-testid="stTabs"] button[data-baseweb="tab"] {
+    opacity: 1 !important;
+    color: #e2e8f0 !important;
+    -webkit-text-fill-color: #e2e8f0 !important;
+    background-color: #1e293b !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px 8px 0 0 !important;
+    min-height: 2.75rem !important;
+    font-weight: 600 !important;
+  }
+  [data-testid="stTabs"] [role="tablist"] button:hover,
+  [data-testid="stTabs"] [role="tab"]:hover,
+  [data-testid="stTabs"] button[data-baseweb="tab"]:hover {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: #334155 !important;
+    border-color: #475569 !important;
+  }
+  [data-testid="stTabs"] [role="tablist"] button[aria-selected="true"],
+  [data-testid="stTabs"] [role="tab"][aria-selected="true"],
+  [data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: #0f172a !important;
+    border-color: #facc15 !important;
+    border-bottom: 3px solid #facc15 !important;
+    font-weight: 700 !important;
+  }
+  [data-testid="stTabs"] p,
+  [data-testid="stTabs"] span {
+    color: inherit !important;
+    opacity: 1 !important;
+    -webkit-text-fill-color: inherit !important;
+  }
+
+  /* ----- サイドバー：ダークグレー（緑っぽい背景を出さない）・テキスト白 ----- */
+  [data-testid="stSidebar"],
+  [data-testid="stSidebar"] > div,
+  [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+    background: #252525 !important;
+    background-image: none !important;
+    color: #ffffff !important;
   }
   [data-testid="stSidebar"] .block-container {
     padding-top: 1rem;
+    color: #f1f5f9 !important;
+  }
+  [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2,
+  [data-testid="stSidebar"] h3 {
+    color: #ffffff !important;
+  }
+  [data-testid="stSidebar"] .stMarkdown,
+  [data-testid="stSidebar"] .stMarkdown p,
+  [data-testid="stSidebar"] .stMarkdown span {
+    color: #e2e8f0 !important;
+  }
+  [data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+  [data-testid="stSidebar"] label,
+  [data-testid="stSidebar"] .stSlider label,
+  [data-testid="stSidebar"] div[data-testid="stSlider"] ~ div label {
+    color: #ffffff !important;
+  }
+  /* スライダー周りの補助テキスト（値など） */
+  [data-testid="stSidebar"] div[data-testid="stSlider"] {
+    color: #f1f5f9 !important;
+  }
+  [data-testid="stSidebar"] small,
+  [data-testid="stSidebar"] .st-emotion-cache {
+    color: #cbd5e1 !important;
   }
 
-  /* 見出し・キャプション */
-  h1, h2, h3 {
-    color: #1e293b !important;
-    font-weight: 600 !important;
-  }
-  [data-testid="stCaption"] {
-    color: #64748b !important;
-  }
-
-  /* プライマリボタン（落ち着いた緑） */
-  div[data-testid="stButton"] button[kind="primary"],
-  button[kind="primary"] {
-    background-color: #166534 !important;
-    border-color: #14532d !important;
-    color: #f8fafc !important;
-  }
-  div[data-testid="stButton"] button[kind="primary"]:hover {
-    background-color: #15803d !important;
-    border-color: #166534 !important;
-  }
-
-  /* スライダー（メイン・サイドバー共通）：緑。ネイティブ range + WebKit/Moz 疑似要素 */
+  /* ----- スライダー：つまみ緑・トラックはダーク ----- */
   div[data-testid="stSlider"] input[type="range"] {
-    accent-color: #15803d !important;
+    accent-color: #22c55e !important;
   }
   div[data-testid="stSlider"] input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none !important;
@@ -758,102 +872,129 @@ def inject_app_theme_css() -> None:
     width: 16px !important;
     height: 16px !important;
     border-radius: 50% !important;
-    background: #166534 !important;
-    border: 2px solid #dcfce7 !important;
-    box-shadow: none !important;
+    background: #22c55e !important;
+    border: 2px solid #bbf7d0 !important;
   }
   div[data-testid="stSlider"] input[type="range"]::-webkit-slider-runnable-track {
     height: 6px !important;
     border-radius: 3px !important;
-    background: #e2e8e0 !important;
+    background: #475569 !important;
   }
   div[data-testid="stSlider"] input[type="range"]::-moz-range-thumb {
     width: 16px !important;
     height: 16px !important;
     border-radius: 50% !important;
-    background: #166534 !important;
-    border: 2px solid #dcfce7 !important;
+    background: #22c55e !important;
+    border: 2px solid #bbf7d0 !important;
   }
   div[data-testid="stSlider"] input[type="range"]::-moz-range-track {
     height: 6px !important;
     border-radius: 3px !important;
-    background: #e2e8e0 !important;
+    background: #475569 !important;
   }
   div[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
-    background-color: #166534 !important;
-    box-shadow: 0 0 0 2px #dcfce7 !important;
+    background-color: #22c55e !important;
+    box-shadow: 0 0 0 2px #14532d !important;
   }
-  div[data-testid="stSlider"] [data-baseweb="slider"] > div {
-    background-color: #bbf7d0 !important;
+  /* メインのみスライダートラックに緑の塗り（サイドバーはグレーのみ） */
+  .main div[data-testid="stSlider"] [data-baseweb="slider"] > div {
+    background-color: #166534 !important;
+  }
+  [data-testid="stSidebar"] div[data-testid="stSlider"] [data-baseweb="slider"] > div {
+    background-color: #52525b !important;
   }
   div[data-testid="stSlider"] div[role="slider"] {
-    background-color: #166534 !important;
-  }
-  /* サイドバー内ランキング重みスライダーを明示的に緑に（優先度を上げる） */
-  [data-testid="stSidebar"] div[data-testid="stSlider"] input[type="range"] {
-    accent-color: #15803d !important;
-  }
-  [data-testid="stSidebar"] div[data-testid="stSlider"] div[role="slider"] {
-    background-color: #166534 !important;
+    background-color: #22c55e !important;
   }
 
-  /* Streamlit 標準アラート — 左縁の赤/オレンジをやめて落ち着いたスレート系に統一 */
+  /* メインエリアのスライダーラベルも読みやすく */
+  .main [data-testid="stWidgetLabel"],
+  .main div[data-testid="stSlider"] {
+    color: #e2e8f0 !important;
+  }
+
+  /* ----- ボタン・入力 ----- */
+  div[data-testid="stButton"] button[kind="primary"],
+  button[kind="primary"] {
+    background-color: #15803d !important;
+    border-color: #166534 !important;
+    color: #f8fafc !important;
+  }
+  div[data-testid="stButton"] button[kind="secondary"],
+  button[kind="secondary"] {
+    background-color: #334155 !important;
+    color: #f1f5f9 !important;
+    border-color: #475569 !important;
+  }
+
+  /* ----- アラート（ダーク・赤は使わない） ----- */
   div[data-testid="stAlert"],
   div[data-testid="stAlert"] > div {
-    background-color: #e8edea !important;
+    background-color: #1e293b !important;
     background-image: none !important;
-    border: 1px solid #b8c9bf !important;
+    border: 1px solid #475569 !important;
     border-left: 4px solid #64748b !important;
     border-radius: 8px !important;
-    color: #334155 !important;
+    color: #e2e8f0 !important;
     box-shadow: none !important;
   }
   div[data-testid="stAlert"] p,
   div[data-testid="stAlert"] span,
   div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] {
-    color: #334155 !important;
+    color: #e2e8f0 !important;
   }
   div[data-testid="stAlert"] svg {
-    fill: #64748b !important;
-    color: #64748b !important;
+    fill: #94a3b8 !important;
+    color: #94a3b8 !important;
   }
 
-  /* タブ・区切り線をやわらかく */
-  [data-testid="stTabs"] [data-baseweb="tab-highlight"],
-  [data-testid="stTabs"] [aria-selected="true"] {
-    border-bottom-color: #15803d !important;
-  }
-  hr {
-    border-color: #d5ddd8 !important;
-  }
-
-  /* カスタム通知（app_notice） */
+  /* ----- カスタム通知 ----- */
   .app-notice {
     padding: 0.65rem 0.9rem;
     border-radius: 8px;
     margin: 0.35rem 0 0.6rem 0;
-    border: 1px solid #b8c9bf;
-    background: #e8edea;
-    color: #334155;
+    border: 1px solid #475569;
+    background: #1e293b;
+    color: #e2e8f0;
     font-size: 0.95rem;
     line-height: 1.45;
   }
   .app-notice--warn {
-    background: #f0ebe3;
-    border-color: #cfc4b2;
-    color: #44403c;
+    background: #292524;
+    border-color: #57534e;
+    color: #e7e5e4;
   }
   .app-notice--error {
-    background: #e9ecea;
-    border-color: #9aa89e;
-    color: #334155;
+    background: #1c1917;
+    border-color: #44403c;
+    color: #e7e5e4;
   }
   .app-attention {
     display: block;
     margin-top: 0.35rem;
-    color: #57534e;
+    color: #cbd5e1 !important;
     font-weight: 600;
     font-size: 0.95rem;
+  }
+
+  /* Expander / radio / select / フォーム（メイン） */
+  [data-testid="stExpander"] summary,
+  [data-testid="stExpander"] summary span {
+    color: #f1f5f9 !important;
+  }
+  .stRadio label, .stRadio span,
+  .stCheckbox label, .stCheckbox span {
+    color: #e2e8f0 !important;
+  }
+  .stSelectbox label,
+  .stTextInput label,
+  .stNumberInput label,
+  .stFileUploader label,
+  .stTextArea label {
+    color: #e2e8f0 !important;
+  }
+  .main [data-testid="stWidgetLabel"] {
+    color: #e2e8f0 !important;
   }
 </style>
         """,
@@ -868,6 +1009,104 @@ def app_notice(message: str, kind: str = "warn") -> None:
     st.markdown(
         f'<div class="app-notice app-notice--{k}">{safe}</div>',
         unsafe_allow_html=True,
+    )
+
+
+def _plot_type_series(df: pd.DataFrame) -> pd.Series:
+    return df[COL_FOOD_TYPE].where(df[COL_FOOD_TYPE].isin(FOOD_TYPE_OPTIONS), "その他")
+
+
+def _compare_nutrient_bar_chart(
+    sub_df: pd.DataFrame,
+    *,
+    chart_title: str,
+    y_axis_title: str,
+    selected_names: List[str],
+    show_legend: bool,
+) -> alt.Chart:
+    """比較タブ用・1栄養素の棒グラフ（フード種類で色分け）"""
+    w = max(320, min(920, 80 + 44 * len(selected_names)))
+    leg = alt.Legend(orient="top", labelColor="#e2e8f0", titleColor="#f1f5f9") if show_legend else None
+    base = (
+        alt.Chart(sub_df)
+        .transform_filter("isValid(datum.value)")
+        .mark_bar(cornerRadiusEnd=2)
+        .encode(
+            x=alt.X(
+                f"{COL_NAME}:N",
+                sort=selected_names,
+                title="商品",
+                axis=alt.Axis(labelAngle=-28, labelLimit=220, labelColor="#cbd5e1"),
+            ),
+            y=alt.Y(
+                "value:Q",
+                title=y_axis_title,
+                axis=alt.Axis(labelColor="#cbd5e1", titleColor="#e2e8f0", gridColor="#334155"),
+            ),
+            color=alt.Color(
+                "_plot_type:N",
+                title="フードの種類",
+                scale=alt.Scale(domain=FOOD_TYPE_COLOR_DOMAIN, range=FOOD_TYPE_COLOR_RANGE),
+                legend=leg,
+            ),
+            tooltip=[
+                alt.Tooltip(COL_NAME, title="商品"),
+                alt.Tooltip("_plot_type:N", title="種類"),
+                alt.Tooltip("value:Q", title=chart_title, format=".4f"),
+            ],
+        )
+        .properties(height=320, width=w, title=alt.TitleParams(text=chart_title, color="#f8fafc", anchor="start"))
+    )
+    return base.configure_view(stroke=None, fill="transparent").configure_axis(
+        domainColor="#64748b",
+        tickColor="#64748b",
+    )
+
+
+def _compare_cost_bar_chart(
+    cost_df: pd.DataFrame,
+    *,
+    selected_names: List[str],
+    show_legend: bool,
+) -> alt.Chart:
+    w = max(320, min(920, 80 + 44 * len(selected_names)))
+    leg = alt.Legend(orient="top", labelColor="#e2e8f0", titleColor="#f1f5f9") if show_legend else None
+    base = (
+        alt.Chart(cost_df)
+        .mark_bar(cornerRadiusEnd=2)
+        .encode(
+            x=alt.X(
+                f"{COL_NAME}:N",
+                sort=selected_names,
+                title="商品",
+                axis=alt.Axis(labelAngle=-28, labelLimit=220, labelColor="#cbd5e1"),
+            ),
+            y=alt.Y(
+                f"{COL_PRICE_100G}:Q",
+                title="円/100g",
+                axis=alt.Axis(labelColor="#cbd5e1", titleColor="#e2e8f0", gridColor="#334155"),
+            ),
+            color=alt.Color(
+                "_plot_type:N",
+                title="フードの種類",
+                scale=alt.Scale(domain=FOOD_TYPE_COLOR_DOMAIN, range=FOOD_TYPE_COLOR_RANGE),
+                legend=leg,
+            ),
+            tooltip=[
+                alt.Tooltip(COL_NAME, title="商品"),
+                alt.Tooltip("_plot_type:N", title="種類"),
+                alt.Tooltip(COL_PRICE_100G, title="100gあたり(円)", format=".2f"),
+            ],
+        )
+        .properties(
+            height=320,
+            width=w,
+            title=alt.TitleParams(text="コスパ（100gあたり価格）", color="#f8fafc", anchor="start"),
+        )
+    )
+    return base.configure_view(stroke=None, fill="transparent").configure_axis(
+        domainColor="#64748b",
+        tickColor="#64748b",
     )
 
 
@@ -890,14 +1129,18 @@ def style_food_type_column_for_display(df: pd.DataFrame) -> Any:
             elif t == "セミモイスト":
                 out.append(semi_bg)
             else:
-                out.append("background-color: #f1f5f4; color: #475569")
+                out.append("background-color: #334155; color: #e2e8f0")
         return out
 
     return df.style.apply(_apply_cols, axis=0)
 
 
 def main() -> None:
-    st.set_page_config(page_title=APP_TITLE, layout="wide")
+    st.set_page_config(
+        page_title=APP_TITLE,
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
     inject_app_theme_css()
     st.title(APP_TITLE)
     st.caption("キャットフードを登録し、栄養素・コスパ・総合スコアで比較できます。")
@@ -1411,75 +1654,45 @@ def main() -> None:
                     )
 
                 st.caption(
-                    "6項目（タンパク質・脂質・炭水化物・リン・カルシウム・マグネシウム）をすべて表示します。"
-                    " 単位が異なるため、各パネルの縦軸は独立です。棒は商品ごとに並べて表示（スタックではありません）。"
+                    "タンパク質・脂質・炭水化物・リン・カルシウム・マグネシウムを、栄養素ごとに別の棒グラフで表示します。"
+                    " 色はフードの種類（ドライ＝黄・ウェット＝水色・セミモイスト＝橙）です。"
                 )
 
                 df_plot = df_sel.copy()
-                df_plot["_plot_type"] = df_plot[COL_FOOD_TYPE].where(
-                    df_plot[COL_FOOD_TYPE].isin(FOOD_TYPE_OPTIONS), "その他"
-                )
+                df_plot["_plot_type"] = _plot_type_series(df_plot)
 
-                long_rows: List[Dict[str, Any]] = []
-                for label, col_base, col_dry in COMPARISON_NUTRIENT_SPECS:
+                for idx, (label, col_base, col_dry) in enumerate(COMPARISON_NUTRIENT_SPECS):
                     col_use = col_dry if dry_compare else col_base
+                    sub_rows: List[Dict[str, Any]] = []
                     for _, row in df_plot.iterrows():
                         v = row.get(col_use, np.nan)
-                        long_rows.append(
+                        sub_rows.append(
                             {
-                                "栄養素": label,
                                 COL_NAME: row[COL_NAME],
                                 "_plot_type": row["_plot_type"],
                                 "value": float(v) if pd.notna(v) else np.nan,
                             }
                         )
-                long_df = pd.DataFrame(long_rows)
-                nutrient_order = [spec[0] for spec in COMPARISON_NUTRIENT_SPECS]
-
-                bar_w = max(60 + 28 * len(selected_names), 160)
-                chart = (
-                    alt.Chart(long_df)
-                    .transform_filter("isValid(datum.value)")
-                    .mark_bar()
-                    .encode(
-                        x=alt.X(
-                            f"{COL_NAME}:N",
-                            sort=selected_names,
-                            title=None,
-                            axis=alt.Axis(labelAngle=-32, labelLimit=220),
-                        ),
-                        y=alt.Y("value:Q", title=""),
-                        color=alt.Color(
-                            "_plot_type:N",
-                            title="フードの種類",
-                            scale=alt.Scale(
-                                domain=FOOD_TYPE_COLOR_DOMAIN,
-                                range=FOOD_TYPE_COLOR_RANGE,
-                            ),
-                            legend=alt.Legend(orient="top"),
-                        ),
-                        column=alt.Column(
-                            "栄養素:N",
-                            sort=nutrient_order,
-                            header=alt.Header(labelOrient="bottom"),
-                        ),
-                        tooltip=[
-                            alt.Tooltip(COL_NAME, title="商品"),
-                            alt.Tooltip("_plot_type:N", title="種類"),
-                            alt.Tooltip("栄養素:N", title="項目"),
-                            alt.Tooltip("value:Q", title="値", format=".4f"),
-                        ],
+                    sub_df = pd.DataFrame(sub_rows)
+                    y_title = COMPARISON_Y_AXIS_TITLE.get(label, "値")
+                    ch = _compare_nutrient_bar_chart(
+                        sub_df,
+                        chart_title=label,
+                        y_axis_title=y_title,
+                        selected_names=selected_names,
+                        show_legend=(idx == 0),
                     )
-                    .properties(width=bar_w, height=320)
-                    .resolve_scale(y="independent", x="independent")
-                    .configure_facet(spacing=14)
-                )
-                st.altair_chart(chart, use_container_width=True)
+                    st.altair_chart(ch, use_container_width=True)
 
                 st.divider()
-                st.subheader("コスパ（100gあたり価格）")
-                comp_cols = [COL_NAME, COL_PRICE, COL_CONTENT, COL_PRICE_100G, COL_REVIEW]
-                st.dataframe(df_sel[comp_cols].sort_values(by=COL_PRICE_100G), use_container_width=True, hide_index=True)
+                cost_df = df_sel[[COL_NAME, COL_FOOD_TYPE, COL_PRICE_100G]].copy()
+                cost_df["_plot_type"] = _plot_type_series(cost_df)
+                cost_ch = _compare_cost_bar_chart(
+                    cost_df,
+                    selected_names=selected_names,
+                    show_legend=False,
+                )
+                st.altair_chart(cost_ch, use_container_width=True)
 
     with tab_rank:
         st.subheader("総合スコアランキング")
