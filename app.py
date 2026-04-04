@@ -1,4 +1,5 @@
 # app.py
+import html
 import json
 import os
 import re
@@ -6,6 +7,7 @@ import unicodedata
 import uuid
 from typing import Any, Dict, List, Optional
 
+import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -65,6 +67,59 @@ COL_PRICE_100G = "100gあたり価格(円)"
 COL_SCORE = "総合スコア"
 
 FOOD_TYPE_OPTIONS = ["ウェット", "ドライ", "セミモイスト"]
+
+# 比較グラフ: フード種類ごとの色（ドライ=黄、ウェット=水色、セミモイスト=橙）
+FOOD_TYPE_COLOR_DOMAIN = ["ドライ", "ウェット", "セミモイスト", "その他"]
+FOOD_TYPE_COLOR_RANGE = ["#FACC15", "#7DD3FC", "#FB923C", "#94A3B8"]
+
+# 比較タブ: (表示ラベル, 通常列, 乾物換算列)
+COMPARISON_NUTRIENT_SPECS: List[tuple] = [
+    ("タンパク質", COL_PROTEIN, COL_PROTEIN_DRY),
+    ("脂質", COL_FAT, COL_FAT_DRY),
+    ("炭水化物", COL_CARBS, COL_CARBS_DRY),
+    ("リン(%)", COL_PHOSPHORUS_PCT, COL_PHOSPHORUS_DRY),
+    ("カルシウム(g/100g)", COL_CALCIUM, COL_CALCIUM_DRY),
+    ("マグネシウム(g/100g)", COL_MAGNESIUM, COL_MAGNESIUM_DRY),
+]
+
+
+def estimate_animal_protein_pct_from_ingredients(main_ing: str) -> float:
+    """
+    主原材料テキストから動物性タンパク質の割合(%)を粗く推定する。
+    明示入力が無い行の補完用（0〜100）。
+    """
+    t = unicodedata.normalize("NFKC", (main_ing or "").strip()).lower()
+    if not t:
+        return 50.0
+
+    # 各グループは「どれか1つでも一致」で1点として数える
+    keyword_groups: List[List[str]] = [
+        ["鶏", "チキン", "chicken"],
+        ["ターキー", "turkey", "七面鳥"],
+        ["サーモン", "salmon", "鮭"],
+        ["まぐろ", "マグロ", "鮪", "tuna"],
+        ["白身魚", "かつお", "鰹", "さんま", "鰯", "いわし", "たら", "鱈", "魚肉", "フィッシュ", "fish"],
+        ["牛肉", "ビーフ", "beef", "牛脂"],
+        ["豚肉", "ポーク", "pork", "豚"],
+        ["ラム", "羊肉", "lamb"],
+        ["カンガルー", "kangaroo"],
+        ["エビ", "海老", "えび", "shrimp"],
+        ["ダック", "鴨", "duck"],
+        ["兎", "うさぎ", "rabbit"],
+        ["鹿", "鹿肉", "deer", "venison"],
+        ["クラム", "牡蠣", "カキ", "貝"],
+        ["卵", "たまご", "エッグ", "egg"],
+        ["チーズ", "cheese"],
+    ]
+    matched = 0
+    for keys in keyword_groups:
+        if any(k.lower() in t for k in keys):
+            matched += 1
+
+    if matched == 0:
+        return 28.0
+
+    return float(min(100.0, 42.0 + matched * 14.0))
 
 # CSVの要求列名（指定フォーマットに合わせる）
 CSV_COL_ADDITIVES = "添加物"
@@ -284,6 +339,11 @@ def foods_to_df(foods: List[Dict[str, Any]]) -> pd.DataFrame:
     df[COL_PHOSPHORUS_DRY] = df[COL_PHOSPHORUS_PCT].where(~is_wet, df[COL_PHOSPHORUS_PCT] * factor)
     df[COL_CALCIUM_DRY] = df[COL_CALCIUM].where(~is_wet, df[COL_CALCIUM] * factor)
     df[COL_MAGNESIUM_DRY] = df[COL_MAGNESIUM].where(~is_wet, df[COL_MAGNESIUM] * factor)
+
+    # 動物性タンパク質(%): 未入力は主原材料から推定（明示の数値は上書きしない）
+    stored_ap = pd.to_numeric(df[COL_ANIMAL_PROTEIN_PCT], errors="coerce")
+    estimated_ap = df[COL_MAIN_ING].astype(str).map(estimate_animal_protein_pct_from_ingredients)
+    df[COL_ANIMAL_PROTEIN_PCT] = stored_ap.where(pd.notna(stored_ap), estimated_ap)
     return df
 
 
@@ -634,8 +694,211 @@ def compute_ranking(
     return df
 
 
+def inject_app_theme_css() -> None:
+    """落ち着いた配色・緑スライダー・Streamlit標準アラートの赤系を抑える"""
+    st.markdown(
+        """
+<style>
+  /* Streamlit が参照するプライマリ色（スライダー等） */
+  :root, .stApp, [data-testid="stAppViewContainer"] {
+    --primary-color: #15803d !important;
+    --slider-thumb-color: #166534 !important;
+    --slider-track-color-active: #bbf7d0 !important;
+    --slider-track-color-inactive: #e2e8e0 !important;
+  }
+
+  /* ベース */
+  .stApp {
+    background: linear-gradient(165deg, #f3f5f4 0%, #e8ecea 55%, #eef1ef 100%);
+    color: #334155;
+  }
+  .main .block-container {
+    padding-top: 1.25rem;
+  }
+  [data-testid="stHeader"] {
+    background: rgba(243, 245, 244, 0.92);
+    border-bottom: 1px solid #d5ddd8;
+  }
+  [data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #eef2ef 0%, #e3e9e5 100%) !important;
+    border-right: 1px solid #cdd8d2 !important;
+  }
+  [data-testid="stSidebar"] .block-container {
+    padding-top: 1rem;
+  }
+
+  /* 見出し・キャプション */
+  h1, h2, h3 {
+    color: #1e293b !important;
+    font-weight: 600 !important;
+  }
+  [data-testid="stCaption"] {
+    color: #64748b !important;
+  }
+
+  /* プライマリボタン（落ち着いた緑） */
+  div[data-testid="stButton"] button[kind="primary"],
+  button[kind="primary"] {
+    background-color: #166534 !important;
+    border-color: #14532d !important;
+    color: #f8fafc !important;
+  }
+  div[data-testid="stButton"] button[kind="primary"]:hover {
+    background-color: #15803d !important;
+    border-color: #166534 !important;
+  }
+
+  /* スライダー（メイン・サイドバー共通）：緑。ネイティブ range + WebKit/Moz 疑似要素 */
+  div[data-testid="stSlider"] input[type="range"] {
+    accent-color: #15803d !important;
+  }
+  div[data-testid="stSlider"] input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    background: #166534 !important;
+    border: 2px solid #dcfce7 !important;
+    box-shadow: none !important;
+  }
+  div[data-testid="stSlider"] input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px !important;
+    border-radius: 3px !important;
+    background: #e2e8e0 !important;
+  }
+  div[data-testid="stSlider"] input[type="range"]::-moz-range-thumb {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    background: #166534 !important;
+    border: 2px solid #dcfce7 !important;
+  }
+  div[data-testid="stSlider"] input[type="range"]::-moz-range-track {
+    height: 6px !important;
+    border-radius: 3px !important;
+    background: #e2e8e0 !important;
+  }
+  div[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
+    background-color: #166534 !important;
+    box-shadow: 0 0 0 2px #dcfce7 !important;
+  }
+  div[data-testid="stSlider"] [data-baseweb="slider"] > div {
+    background-color: #bbf7d0 !important;
+  }
+  div[data-testid="stSlider"] div[role="slider"] {
+    background-color: #166534 !important;
+  }
+  /* サイドバー内ランキング重みスライダーを明示的に緑に（優先度を上げる） */
+  [data-testid="stSidebar"] div[data-testid="stSlider"] input[type="range"] {
+    accent-color: #15803d !important;
+  }
+  [data-testid="stSidebar"] div[data-testid="stSlider"] div[role="slider"] {
+    background-color: #166534 !important;
+  }
+
+  /* Streamlit 標準アラート — 左縁の赤/オレンジをやめて落ち着いたスレート系に統一 */
+  div[data-testid="stAlert"],
+  div[data-testid="stAlert"] > div {
+    background-color: #e8edea !important;
+    background-image: none !important;
+    border: 1px solid #b8c9bf !important;
+    border-left: 4px solid #64748b !important;
+    border-radius: 8px !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+  }
+  div[data-testid="stAlert"] p,
+  div[data-testid="stAlert"] span,
+  div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] {
+    color: #334155 !important;
+  }
+  div[data-testid="stAlert"] svg {
+    fill: #64748b !important;
+    color: #64748b !important;
+  }
+
+  /* タブ・区切り線をやわらかく */
+  [data-testid="stTabs"] [data-baseweb="tab-highlight"],
+  [data-testid="stTabs"] [aria-selected="true"] {
+    border-bottom-color: #15803d !important;
+  }
+  hr {
+    border-color: #d5ddd8 !important;
+  }
+
+  /* カスタム通知（app_notice） */
+  .app-notice {
+    padding: 0.65rem 0.9rem;
+    border-radius: 8px;
+    margin: 0.35rem 0 0.6rem 0;
+    border: 1px solid #b8c9bf;
+    background: #e8edea;
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  .app-notice--warn {
+    background: #f0ebe3;
+    border-color: #cfc4b2;
+    color: #44403c;
+  }
+  .app-notice--error {
+    background: #e9ecea;
+    border-color: #9aa89e;
+    color: #334155;
+  }
+  .app-attention {
+    display: block;
+    margin-top: 0.35rem;
+    color: #57534e;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def app_notice(message: str, kind: str = "warn") -> None:
+    """警告・エラー用（赤を使わない）"""
+    k = kind if kind in ("warn", "error") else "warn"
+    safe = html.escape(str(message))
+    st.markdown(
+        f'<div class="app-notice app-notice--{k}">{safe}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def style_food_type_column_for_display(df: pd.DataFrame) -> Any:
+    """一覧表のフード種類列に、グラフと揃えた黄・水色・橙の薄色背景を付与（Styler）"""
+    dry_bg = "background-color: #fef9c3; color: #854d0e"
+    wet_bg = "background-color: #cffafe; color: #155e75"
+    semi_bg = "background-color: #ffedd5; color: #9a3412"
+
+    def _apply_cols(s: pd.Series) -> List[str]:
+        if s.name != COL_FOOD_TYPE:
+            return [""] * len(s)
+        out: List[str] = []
+        for v in s:
+            t = str(v).strip() if pd.notna(v) else ""
+            if t == "ドライ":
+                out.append(dry_bg)
+            elif t == "ウェット":
+                out.append(wet_bg)
+            elif t == "セミモイスト":
+                out.append(semi_bg)
+            else:
+                out.append("background-color: #f1f5f4; color: #475569")
+        return out
+
+    return df.style.apply(_apply_cols, axis=0)
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="wide")
+    inject_app_theme_css()
     st.title(APP_TITLE)
     st.caption("キャットフードを登録し、栄養素・コスパ・総合スコアで比較できます。")
 
@@ -681,7 +944,7 @@ def main() -> None:
                     file_bytes = uploaded_top.read()
                     new_items = _dedupe_items_by_name(foods_from_csv(file_bytes, debug=True))
                     if not new_items:
-                        st.warning("商品名が空の行はスキップされました。追加件数がありません。")
+                        app_notice("商品名が空の行はスキップされました。追加件数がありません。", "warn")
                     else:
                         existing = st.session_state.foods
                         existing_names = _existing_name_set(existing)
@@ -693,7 +956,10 @@ def main() -> None:
                                 if str(it.get(COL_NAME, "")).strip() and str(it.get(COL_NAME, "")).strip() not in existing_names
                             ]
                             if not filtered:
-                                st.warning(f"重複のため追加できる商品がありません。({len(dup_names)}件はスキップ)")
+                                app_notice(
+                                    f"重複のため追加できる商品がありません。({len(dup_names)}件はスキップ)",
+                                    "warn",
+                                )
                             else:
                                 st.session_state.foods.extend(filtered)
                                 save_foods(st.session_state.foods)
@@ -704,14 +970,17 @@ def main() -> None:
                                 "new_items": new_items,
                                 "dup_names": dup_names,
                             }
-                            st.warning(f"重複商品名が {len(dup_names)} 件あります。上書きを実行するには確認してください。")
+                            app_notice(
+                                f"重複商品名が {len(dup_names)} 件あります。上書きを実行するには確認してください。",
+                                "warn",
+                            )
                         else:
                             st.session_state.foods.extend(new_items)
                             save_foods(st.session_state.foods)
                             st.success(f"インポート完了: {len(new_items)}件追加しました。")
                             st.rerun()
                 except Exception as e:
-                    st.error(f"インポートに失敗しました: {e}")
+                    app_notice(f"インポートに失敗しました: {e}", "error")
 
             pending = st.session_state.get("csv_import_pending_overwrite_top")
             if pending and isinstance(pending, dict):
@@ -791,7 +1060,7 @@ def main() -> None:
             st.metric("炭水化物(%)", f"{carbs_calc:.1f}%")
             if carbs_calc >= 30.0:
                 st.markdown(
-                    f"<span style='color: red; font-weight: bold;'>炭水化物が高めで {carbs_calc:.1f}% です（30%以上）</span>",
+                    f'<span class="app-attention">炭水化物が高めで {carbs_calc:.1f}% です（30%以上）</span>',
                     unsafe_allow_html=True,
                 )
 
@@ -824,7 +1093,7 @@ def main() -> None:
                         st.metric(COL_CALCIUM_DRY, f"{calcium_dry_calc:.2f}%")
                         st.metric(COL_MAGNESIUM_DRY, f"{magnesium_dry_calc:.2f}%")
                 else:
-                    st.warning("水分(%)が100に近く、乾物換算ができません。")
+                    app_notice("水分(%)が100に近く、乾物換算ができません。", "warn")
 
             review = st.slider("口コミ評価(0-5)", min_value=0.0, max_value=5.0, step=0.1, value=3.0)
 
@@ -834,7 +1103,7 @@ def main() -> None:
                 max_value=100.0,
                 step=1.0,
                 value=50.0,
-                help="タンパク質のうち動物性由来の割合（目安）。不明なら中央値のままでも比較できます。",
+                help="タンパク質のうち動物性由来の割合（目安）。CSVで空の場合は、主原材料の語（鶏・サーモン・まぐろ等）から自動推定します。",
             )
 
             preservative = st.text_input(COL_PRESERVATIVE, max_chars=120)
@@ -845,7 +1114,7 @@ def main() -> None:
 
         if submitted:
             if not name.strip():
-                st.error("商品名を入力してください。")
+                app_notice("商品名を入力してください。", "error")
             else:
                 new_food: Dict[str, Any] = {
                     "id": str(uuid.uuid4()),
@@ -925,16 +1194,22 @@ def main() -> None:
             df_show[COL_REVIEW] = df_show[COL_REVIEW].round(2)
             df_show[COL_ANIMAL_PROTEIN_PCT] = df_show[COL_ANIMAL_PROTEIN_PCT].round(1)
 
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
+            st.dataframe(
+                style_food_type_column_for_display(df_show),
+                use_container_width=True,
+                hide_index=True,
+            )
 
-            # 炭水化物が高めのデータは赤字で警告表示
+            # 炭水化物が高めのデータ（赤は使わない）
             if COL_CARBS in df.columns:
                 high_carbs = df[df[COL_CARBS] >= 30.0][[COL_NAME, COL_CARBS]].copy()
                 if not high_carbs.empty:
-                    st.markdown("### 警告（炭水化物が高い商品）")
+                    st.markdown("##### 炭水化物の目安（30%以上）")
                     for _, r in high_carbs.iterrows():
+                        nm = html.escape(str(r[COL_NAME]))
+                        pct = float(r[COL_CARBS])
                         st.markdown(
-                            f"<span style='color: red; font-weight: bold;'>{r[COL_NAME]}：炭水化物が高めで {float(r[COL_CARBS]):.1f}% です（30%以上）</span>",
+                            f'<p class="app-attention">{nm}：炭水化物が高めで {pct:.1f}% です（30%以上）</p>',
                             unsafe_allow_html=True,
                         )
 
@@ -987,7 +1262,7 @@ def main() -> None:
                         file_bytes = uploaded.read()
                         new_items = _dedupe_items_by_name(foods_from_csv(file_bytes, debug=True))
                         if not new_items:
-                            st.warning("商品名が空の行はスキップされました。追加件数がありません。")
+                            app_notice("商品名が空の行はスキップされました。追加件数がありません。", "warn")
                         else:
                             existing = st.session_state.foods
                             existing_names = _existing_name_set(existing)
@@ -999,7 +1274,10 @@ def main() -> None:
                                     if str(it.get(COL_NAME, "")).strip() and str(it.get(COL_NAME, "")).strip() not in existing_names
                                 ]
                                 if not filtered:
-                                    st.warning(f"重複のため追加できる商品がありません。({len(dup_names)}件はスキップ)")
+                                    app_notice(
+                                    f"重複のため追加できる商品がありません。({len(dup_names)}件はスキップ)",
+                                    "warn",
+                                )
                                 else:
                                     st.session_state.foods.extend(filtered)
                                     save_foods(st.session_state.foods)
@@ -1012,14 +1290,17 @@ def main() -> None:
                                     "new_items": new_items,
                                     "dup_names": dup_names,
                                 }
-                                st.warning(f"重複商品名が {len(dup_names)} 件あります。上書きを実行するには確認してください。")
+                                app_notice(
+                                f"重複商品名が {len(dup_names)} 件あります。上書きを実行するには確認してください。",
+                                "warn",
+                            )
                             else:
                                 st.session_state.foods.extend(new_items)
                                 save_foods(st.session_state.foods)
                                 st.success(f"インポート完了: {len(new_items)}件追加しました。")
                                 st.rerun()
                     except Exception as e:
-                        st.error(f"インポートに失敗しました: {e}")
+                        app_notice(f"インポートに失敗しました: {e}", "error")
 
                 pending = st.session_state.get("csv_import_pending_overwrite_tab")
                 if pending and isinstance(pending, dict):
@@ -1067,7 +1348,7 @@ def main() -> None:
             if not dup_names_list:
                 st.info("重複はありません。")
             else:
-                st.warning(f"重複商品名: {len(dup_names_list)}件（同名を1件だけ残します）")
+                app_notice(f"重複商品名: {len(dup_names_list)}件（同名を1件だけ残します）", "warn")
                 if not st.session_state.get("dedupe_pending_list", False):
                     if st.button("重複を削除（同名を1件残す）", type="primary", key="dedupe_list_btn"):
                         st.session_state["dedupe_pending_list"] = True
@@ -1118,7 +1399,7 @@ def main() -> None:
             selected_names = st.multiselect("比較する商品", options=sorted(set(all_names)), default=default)
 
             if not selected_names:
-                st.warning("商品を選択してください。")
+                app_notice("商品を選択してください。", "warn")
             else:
                 df_sel = df[df[COL_NAME].isin(selected_names)].copy()
                 df_sel = df_sel.sort_values(by=COL_NAME)
@@ -1129,33 +1410,71 @@ def main() -> None:
                         "乾物換算は、乾物値(%) = 栄養素(%) ÷ (100 - 水分%) × 100 に基づき、ウェット（高水分）を除水基準に換算することで、ドライフードと公平に比較できます。"
                     )
 
-                nutrient_options = [
-                    COL_PROTEIN,
-                    COL_FAT,
-                    COL_CARBS,
-                    COL_PHOSPHORUS_PCT,
-                    COL_CALCIUM,
-                    COL_MAGNESIUM,
-                ]
-                selected_nutrients = st.multiselect(
-                    "比較する栄養素（複数選択可）",
-                    options=nutrient_options,
-                    default=[COL_PROTEIN, COL_FAT, COL_CARBS],
+                st.caption(
+                    "6項目（タンパク質・脂質・炭水化物・リン・カルシウム・マグネシウム）をすべて表示します。"
+                    " 単位が異なるため、各パネルの縦軸は独立です。棒は商品ごとに並べて表示（スタックではありません）。"
                 )
-                if not selected_nutrients:
-                    st.warning("栄養素を選択してください。")
-                else:
-                    dry_col_map = {
-                        COL_PROTEIN: COL_PROTEIN_DRY,
-                        COL_FAT: COL_FAT_DRY,
-                        COL_CARBS: COL_CARBS_DRY,
-                        COL_PHOSPHORUS_PCT: COL_PHOSPHORUS_DRY,
-                        COL_CALCIUM: COL_CALCIUM_DRY,
-                        COL_MAGNESIUM: COL_MAGNESIUM_DRY,
-                    }
-                    plot_cols = selected_nutrients if not dry_compare else [dry_col_map.get(c, c) for c in selected_nutrients]
-                    nutrient_df = df_sel.set_index(COL_NAME)[plot_cols]
-                    st.bar_chart(nutrient_df, use_container_width=True)
+
+                df_plot = df_sel.copy()
+                df_plot["_plot_type"] = df_plot[COL_FOOD_TYPE].where(
+                    df_plot[COL_FOOD_TYPE].isin(FOOD_TYPE_OPTIONS), "その他"
+                )
+
+                long_rows: List[Dict[str, Any]] = []
+                for label, col_base, col_dry in COMPARISON_NUTRIENT_SPECS:
+                    col_use = col_dry if dry_compare else col_base
+                    for _, row in df_plot.iterrows():
+                        v = row.get(col_use, np.nan)
+                        long_rows.append(
+                            {
+                                "栄養素": label,
+                                COL_NAME: row[COL_NAME],
+                                "_plot_type": row["_plot_type"],
+                                "value": float(v) if pd.notna(v) else np.nan,
+                            }
+                        )
+                long_df = pd.DataFrame(long_rows)
+                nutrient_order = [spec[0] for spec in COMPARISON_NUTRIENT_SPECS]
+
+                bar_w = max(60 + 28 * len(selected_names), 160)
+                chart = (
+                    alt.Chart(long_df)
+                    .transform_filter("isValid(datum.value)")
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(
+                            f"{COL_NAME}:N",
+                            sort=selected_names,
+                            title=None,
+                            axis=alt.Axis(labelAngle=-32, labelLimit=220),
+                        ),
+                        y=alt.Y("value:Q", title=""),
+                        color=alt.Color(
+                            "_plot_type:N",
+                            title="フードの種類",
+                            scale=alt.Scale(
+                                domain=FOOD_TYPE_COLOR_DOMAIN,
+                                range=FOOD_TYPE_COLOR_RANGE,
+                            ),
+                            legend=alt.Legend(orient="top"),
+                        ),
+                        column=alt.Column(
+                            "栄養素:N",
+                            sort=nutrient_order,
+                            header=alt.Header(labelOrient="bottom"),
+                        ),
+                        tooltip=[
+                            alt.Tooltip(COL_NAME, title="商品"),
+                            alt.Tooltip("_plot_type:N", title="種類"),
+                            alt.Tooltip("栄養素:N", title="項目"),
+                            alt.Tooltip("value:Q", title="値", format=".4f"),
+                        ],
+                    )
+                    .properties(width=bar_w, height=320)
+                    .resolve_scale(y="independent", x="independent")
+                    .configure_facet(spacing=14)
+                )
+                st.altair_chart(chart, use_container_width=True)
 
                 st.divider()
                 st.subheader("コスパ（100gあたり価格）")
@@ -1212,7 +1531,11 @@ def main() -> None:
                 lambda x: round(float(x), 1) if pd.notna(x) else x
             )
 
-            st.dataframe(scored_show, use_container_width=True, hide_index=True)
+            st.dataframe(
+                style_food_type_column_for_display(scored_show),
+                use_container_width=True,
+                hide_index=True,
+            )
 
             with st.expander("総合スコアの考え方"):
                 st.write(
