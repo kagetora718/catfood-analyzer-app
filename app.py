@@ -58,6 +58,9 @@ COL_TARGET_WEIGHT = "対象猫体重(kg)"
 # フードの種類
 COL_FOOD_TYPE = "フードの種類"
 
+# ランキング用: 動物性タンパク質の割合（0〜100%、高いほど良い）
+COL_ANIMAL_PROTEIN_PCT = "動物性タンパク質(%)"
+
 COL_PRICE_100G = "100gあたり価格(円)"
 COL_SCORE = "総合スコア"
 
@@ -85,6 +88,9 @@ CSV_TEMPLATE_COLS = [
     COL_REVIEW,
 ]
 
+# 旧CSVとの互換のため必須ではない列（テンプレ・エクスポートには含める）
+CSV_OPTIONAL_COLS = [COL_ANIMAL_PROTEIN_PCT]
+
 # CSVヘッダの「別名」（単位なし等）を内部列名へ吸収するためのマッピング
 # ユーザー要望の列名例:
 # 商品名, 価格, 内容量, 主原材料, カロリー, タンパク質, 脂質, リン, カルシウム, マグネシウム, 添加物, 原産国, 対象猫, フードの種類, 口コミ評価
@@ -101,6 +107,7 @@ CSV_HEADER_ALIASES = {
     "カルシウム": COL_CALCIUM,
     "マグネシウム": COL_MAGNESIUM,
     "口コミ評価": COL_REVIEW,
+    "動物性タンパク質": COL_ANIMAL_PROTEIN_PCT,
 }
 
 STORE_COLUMNS = [
@@ -125,6 +132,7 @@ STORE_COLUMNS = [
     COL_COLORANT,
     COL_ANTIOXIDANT,
     COL_REVIEW,
+    COL_ANIMAL_PROTEIN_PCT,
 ]
 
 NUMERIC_COLUMNS = [
@@ -141,6 +149,7 @@ NUMERIC_COLUMNS = [
     COL_TARGET_AGE,
     COL_TARGET_WEIGHT,
     COL_REVIEW,
+    COL_ANIMAL_PROTEIN_PCT,
 ]
 
 TEXT_COLUMNS = [
@@ -292,8 +301,8 @@ def _coerce_text_from_csv(s: pd.Series) -> pd.Series:
 
 
 def csv_template_bytes() -> bytes:
-    # CSVテンプレはユーザー要望の列だけ（指定順）
-    csv_text = ",".join(CSV_TEMPLATE_COLS) + "\n"
+    # CSVテンプレはユーザー要望の列 + 任意列（指定順）
+    csv_text = ",".join([*CSV_TEMPLATE_COLS, *CSV_OPTIONAL_COLS]) + "\n"
     # Excelでの文字化け対策
     return csv_text.encode("utf-8-sig")
 
@@ -363,7 +372,7 @@ def foods_from_csv(file_bytes: bytes, *, mode: str = "append", debug: bool = Fal
         normalize_header_key(k): v for k, v in CSV_HEADER_ALIASES.items()
     }
     exact_norm_map: Dict[str, str] = {
-        normalize_header_key(v): v for v in CSV_TEMPLATE_COLS
+        normalize_header_key(v): v for v in [*CSV_TEMPLATE_COLS, *CSV_OPTIONAL_COLS]
     }
 
     rename_map: Dict[str, str] = {}
@@ -466,6 +475,9 @@ def foods_from_csv(file_bytes: bytes, *, mode: str = "append", debug: bool = Fal
             COL_COLORANT: colorant_val,
             COL_ANTIOXIDANT: antioxidant_val,
             COL_REVIEW: num(COL_REVIEW),
+            COL_ANIMAL_PROTEIN_PCT: num(COL_ANIMAL_PROTEIN_PCT)
+            if COL_ANIMAL_PROTEIN_PCT in df_csv.columns
+            else None,
         }
         foods.append(item)
     return foods
@@ -511,10 +523,12 @@ def foods_to_csv_bytes(foods: List[Dict[str, Any]]) -> bytes:
             CSV_COL_TARGET_CAT: df.apply(target_cat_out, axis=1),
             COL_FOOD_TYPE: df[COL_FOOD_TYPE],
             COL_REVIEW: df[COL_REVIEW],
+            COL_ANIMAL_PROTEIN_PCT: df[COL_ANIMAL_PROTEIN_PCT],
         }
     )
     # Excel/日本語文字化け対策
-    return df_out[CSV_TEMPLATE_COLS].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    export_cols = [*CSV_TEMPLATE_COLS, *CSV_OPTIONAL_COLS]
+    return df_out[export_cols].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
 
 def _existing_name_set(foods: List[Dict[str, Any]]) -> set[str]:
@@ -557,11 +571,26 @@ def compute_ranking(
     w_cost_100g: float,
     w_fat: float,
     w_calories: float,
+    w_phosphorus: float,
+    w_carbs: float,
+    w_animal_protein: float,
+    w_additive_free: float,
 ) -> pd.DataFrame:
     # 重みが全部0の場合の保険
-    weight_sum = w_review + w_protein + w_cost_100g + w_fat + w_calories
+    weight_sum = (
+        w_review
+        + w_protein
+        + w_cost_100g
+        + w_fat
+        + w_calories
+        + w_phosphorus
+        + w_carbs
+        + w_animal_protein
+        + w_additive_free
+    )
     if weight_sum <= 0:
-        w_review, w_protein, w_cost_100g, w_fat, w_calories = 0.4, 0.3, 0.2, 0.05, 0.05
+        w_review, w_protein, w_cost_100g, w_fat, w_calories = 0.25, 0.15, 0.15, 0.05, 0.05
+        w_phosphorus, w_carbs, w_animal_protein, w_additive_free = 0.1, 0.1, 0.1, 0.1
         weight_sum = 1.0
 
     w_review /= weight_sum
@@ -569,12 +598,26 @@ def compute_ranking(
     w_cost_100g /= weight_sum
     w_fat /= weight_sum
     w_calories /= weight_sum
+    w_phosphorus /= weight_sum
+    w_carbs /= weight_sum
+    w_animal_protein /= weight_sum
+    w_additive_free /= weight_sum
 
     protein_norm = minmax_norm(df[COL_PROTEIN], higher_is_better=True)
     fat_norm = minmax_norm(df[COL_FAT], higher_is_better=False)  # 少ない方が良い想定
     cal_norm = minmax_norm(df[COL_CAL], higher_is_better=False)  # 少ない方が良い想定
     cost_norm = minmax_norm(df[COL_PRICE_100G], higher_is_better=False)  # 安い方が良い想定
     review_norm = minmax_norm(df[COL_REVIEW], higher_is_better=True)
+
+    phos_norm = minmax_norm(df[COL_PHOSPHORUS], higher_is_better=False)
+    carbs_norm = minmax_norm(df[COL_CARBS], higher_is_better=False)
+    animal_norm = minmax_norm(df[COL_ANIMAL_PROTEIN_PCT], higher_is_better=True)
+
+    pres = df[COL_PRESERVATIVE].fillna("").astype(str).str.strip()
+    colr = df[COL_COLORANT].fillna("").astype(str).str.strip()
+    ant = df[COL_ANTIOXIDANT].fillna("").astype(str).str.strip()
+    additive_free = ((pres == "") & (colr == "") & (ant == "")).astype(float)
+    additive_norm = minmax_norm(additive_free, higher_is_better=True)
 
     df = df.copy()
     df[COL_SCORE] = (
@@ -583,6 +626,10 @@ def compute_ranking(
         + w_cost_100g * cost_norm
         + w_fat * fat_norm
         + w_calories * cal_norm
+        + w_phosphorus * phos_norm
+        + w_carbs * carbs_norm
+        + w_animal_protein * animal_norm
+        + w_additive_free * additive_norm
     )
     return df
 
@@ -699,11 +746,15 @@ def main() -> None:
 
     with st.sidebar:
         st.header("ランキング重み（調整）")
-        w_review = st.slider("口コミ評価", 0.0, 1.0, 0.4, 0.05)
-        w_protein = st.slider("タンパク質", 0.0, 1.0, 0.3, 0.05)
-        w_cost_100g = st.slider("100gあたり価格（安いほど）", 0.0, 1.0, 0.2, 0.05)
+        w_review = st.slider("口コミ評価", 0.0, 1.0, 0.25, 0.05)
+        w_protein = st.slider("タンパク質", 0.0, 1.0, 0.15, 0.05)
+        w_cost_100g = st.slider("100gあたり価格（安いほど）", 0.0, 1.0, 0.15, 0.05)
         w_fat = st.slider("脂質（少ないほど）", 0.0, 1.0, 0.05, 0.05)
         w_calories = st.slider("カロリー（少ないほど）", 0.0, 1.0, 0.05, 0.05)
+        w_phosphorus = st.slider("リン（少ないほど）", 0.0, 1.0, 0.1, 0.05)
+        w_carbs = st.slider("炭水化物（少ないほど）", 0.0, 1.0, 0.1, 0.05)
+        w_animal_protein = st.slider("動物性タンパク質（多いほど）", 0.0, 1.0, 0.1, 0.05)
+        w_additive_free = st.slider("添加物なし（無添加ほど）", 0.0, 1.0, 0.1, 0.05)
 
         st.divider()
         st.subheader("データ")
@@ -777,6 +828,15 @@ def main() -> None:
 
             review = st.slider("口コミ評価(0-5)", min_value=0.0, max_value=5.0, step=0.1, value=3.0)
 
+            animal_protein_pct = st.slider(
+                COL_ANIMAL_PROTEIN_PCT,
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                value=50.0,
+                help="タンパク質のうち動物性由来の割合（目安）。不明なら中央値のままでも比較できます。",
+            )
+
             preservative = st.text_input(COL_PRESERVATIVE, max_chars=120)
             colorant = st.text_input(COL_COLORANT, max_chars=120)
             antioxidant = st.text_input(COL_ANTIOXIDANT, max_chars=120)
@@ -809,6 +869,7 @@ def main() -> None:
                     COL_COLORANT: colorant.strip(),
                     COL_ANTIOXIDANT: antioxidant.strip(),
                     COL_REVIEW: float(review),
+                    COL_ANIMAL_PROTEIN_PCT: float(animal_protein_pct),
                 }
                 st.session_state.foods.append(new_food)
                 save_foods(st.session_state.foods)
@@ -845,6 +906,7 @@ def main() -> None:
                 COL_COLORANT,
                 COL_ANTIOXIDANT,
                 COL_REVIEW,
+                COL_ANIMAL_PROTEIN_PCT,
             ]
             df_show = df[show_cols].copy()
             df_show[COL_PRICE] = df_show[COL_PRICE].round(0)
@@ -861,6 +923,7 @@ def main() -> None:
             df_show[COL_TARGET_AGE] = df_show[COL_TARGET_AGE].round(1)
             df_show[COL_TARGET_WEIGHT] = df_show[COL_TARGET_WEIGHT].round(1)
             df_show[COL_REVIEW] = df_show[COL_REVIEW].round(2)
+            df_show[COL_ANIMAL_PROTEIN_PCT] = df_show[COL_ANIMAL_PROTEIN_PCT].round(1)
 
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
@@ -896,6 +959,9 @@ def main() -> None:
                         language="text",
                     )
                     st.write("上記のキーを省略して `トコフェロール（混合）` のように書いた場合は、保存料として扱います。")
+                    st.write(
+                        f"テンプレ末尾の `{COL_ANIMAL_PROTEIN_PCT}` は任意です。列が無い古いCSVでもインポートできます。"
+                    )
 
                 st.subheader("CSVをアップロードして一括登録")
                 uploaded = st.file_uploader("CSVファイルを選択", type=["csv"], key="tab_csv_uploader")
@@ -1108,6 +1174,10 @@ def main() -> None:
                 w_cost_100g=w_cost_100g,
                 w_fat=w_fat,
                 w_calories=w_calories,
+                w_phosphorus=w_phosphorus,
+                w_carbs=w_carbs,
+                w_animal_protein=w_animal_protein,
+                w_additive_free=w_additive_free,
             )
             scored = scored.sort_values(by=COL_SCORE, ascending=False)
             scored_show = scored[
@@ -1121,6 +1191,9 @@ def main() -> None:
                     COL_FAT,
                     COL_CAL,
                     COL_PRICE_100G,
+                    COL_PHOSPHORUS,
+                    COL_CARBS,
+                    COL_ANIMAL_PROTEIN_PCT,
                 ]
             ].copy()
             scored_show[COL_SCORE] = scored_show[COL_SCORE].map(lambda x: round(float(x), 4))
@@ -1129,6 +1202,15 @@ def main() -> None:
             scored_show[COL_FAT] = scored_show[COL_FAT].map(lambda x: round(float(x), 2))
             scored_show[COL_CAL] = scored_show[COL_CAL].map(lambda x: round(float(x), 1))
             scored_show[COL_REVIEW] = scored_show[COL_REVIEW].map(lambda x: round(float(x), 2))
+            scored_show[COL_PHOSPHORUS] = scored_show[COL_PHOSPHORUS].map(
+                lambda x: round(float(x), 1) if pd.notna(x) else x
+            )
+            scored_show[COL_CARBS] = scored_show[COL_CARBS].map(
+                lambda x: round(float(x), 1) if pd.notna(x) else x
+            )
+            scored_show[COL_ANIMAL_PROTEIN_PCT] = scored_show[COL_ANIMAL_PROTEIN_PCT].map(
+                lambda x: round(float(x), 1) if pd.notna(x) else x
+            )
 
             st.dataframe(scored_show, use_container_width=True, hide_index=True)
 
@@ -1136,8 +1218,10 @@ def main() -> None:
                 st.write(
                     "各指標を登録済み商品の範囲で 0-1 に正規化し、重み付き合計で総合スコアを算出します。"
                 )
-                st.write("高いほど良い: 口コミ評価, タンパク質")
-                st.write("低いほど良い: 100gあたり価格, 脂質, カロリー（想定）")
+                st.write("高いほど良い: 口コミ評価, タンパク質, 動物性タンパク質(%), 添加物なし（3項目すべて空）")
+                st.write(
+                    "低いほど良い: 100gあたり価格, 脂質, カロリー（想定）, リン(mg/100g), 炭水化物(%)"
+                )
 
 
 if __name__ == "__main__":
